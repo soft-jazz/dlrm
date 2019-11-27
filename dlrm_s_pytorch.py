@@ -208,7 +208,7 @@ class DLRM_Net(nn.Module):
                 self.qr_operation = qr_operation
                 self.qr_threshold = qr_threshold
             # create operators
-            if True:
+            if False:
                 self.emb_l = self.create_emb(m_spa, ln_emb)
 
             if False:
@@ -250,6 +250,8 @@ class DLRM_Net(nn.Module):
         return ly
 
     def interact_features(self, x, ly):
+        ly = list(torch.unbind(ly))
+
         if self.arch_interaction_op == "dot":
             # concatenate dense and sparse features
             (batch_size, d) = x.shape
@@ -285,18 +287,21 @@ class DLRM_Net(nn.Module):
 
     # def forward(self, dense_x, lS_o, lS_i):
     # def forward(self, dense_x): # bot_l input
-    def forward(self, lS_o, lS_i): # emb input
+    # def forward(self, lS_o, lS_i): # emb input
+    def forward(self, bot_l_out, emb_out): # feature_interaction
         # __import__('pdb').set_trace()
         if self.ndevices <= 1:
             # return self.sequential_forward(dense_x, lS_o, lS_i)
             # return self.sequential_forward(dense_x) # bot_l input
-            return self.sequential_forward(lS_o, lS_i) # emb input
+            # return self.sequential_forward(lS_o, lS_i) # emb input
+            return self.sequential_forward(bot_l_out, emb_out) # feature_interaction
         else:
             return self.parallel_forward(dense_x, lS_o, lS_i)
 
     # def sequential_forward(self, dense_x, lS_o, lS_i):
     # def sequential_forward(self, dense_x): # bot_l input
-    def sequential_forward(self, lS_o, lS_i): # bot_l input
+    # def sequential_forward(self, lS_o, lS_i): # bot_l input
+    def sequential_forward(self, bot_l_out, emb_out): # bot_l input
         # __import__('pdb').set_trace()
         # process dense features (using bottom mlp), resulting in a row vector
         # x = self.apply_mlp(dense_x, self.bot_l)
@@ -306,7 +311,7 @@ class DLRM_Net(nn.Module):
         # # print(x.detach().cpu().numpy())
 
         # process sparse features(using embeddings), resulting in a list of row vectors
-        ly = self.apply_emb(lS_o, lS_i, self.emb_l)
+        # ly = self.apply_emb(lS_o, lS_i, self.emb_l)
         # __import__('pdb').set_trace()
         # self.ly = ly
         # # for y in ly:
@@ -314,6 +319,7 @@ class DLRM_Net(nn.Module):
 
         # # interact features (dense and sparse)
         # z = self.interact_features(x, ly)
+        z = self.interact_features(bot_l_out, emb_out)
         # # print(z.detach().cpu().numpy())
 
         # # obtain probability of a click (using top mlp)
@@ -325,9 +331,9 @@ class DLRM_Net(nn.Module):
         # else:
         #     z = p
 
-        # return z
+        return z
         # return x
-        return torch.stack(ly)
+        # return torch.stack(ly)
 
     def parallel_forward(self, dense_x, lS_o, lS_i):
         ### prepare model (overwrite) ###
@@ -777,7 +783,7 @@ if __name__ == "__main__":
                     del d[k]
 
             delete_state_keys("bot_l", ld_model["state_dict"])
-            # delete_state_keys("emb", ld_model["state_dict"])
+            delete_state_keys("emb", ld_model["state_dict"])
             delete_state_keys("top_l", ld_model["state_dict"])
 
         # __import__('pdb').set_trace()
@@ -840,8 +846,13 @@ if __name__ == "__main__":
                 }
                 input_container = DLRMInputContainer(my_values)
                 # dlrm_script = torch.jit.trace(dlrm, (X, lS_o, lS_i)) # total network
+                bot_l_out = torch.load("bot_l_output.pt")
+                emb_out = torch.load("emb_output.pt")
+                # __import__('pdb').set_trace()
+                # V = dlrm(bot_l_out, emb_out)
                 # dlrm_script = torch.jit.trace(dlrm, X) # bot_l
-                dlrm_script = torch.jit.trace(dlrm, (lS_o, lS_i)) # emb
+                # dlrm_script = torch.jit.trace(dlrm, (lS_o, lS_i)) # emb
+                dlrm_script = torch.jit.trace(dlrm, (bot_l_out, emb_out)) # feature-interaction
 
                 __import__('pdb').set_trace()
                 Z = dlrm_wrap(X, lS_o, lS_i, use_gpu, device)
