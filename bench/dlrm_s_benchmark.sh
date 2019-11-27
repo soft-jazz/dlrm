@@ -13,11 +13,12 @@ fi
 #echo $dlrm_extra_option
 
 cpu=1
-gpu=1
+gpu=0
 pt=1
-c2=1
+c2=0
 
-ncores=28 #12 #6
+# ncores=28 #12 #6
+ncores=6
 nsockets="0"
 
 ngpus="1 2 4 8"
@@ -54,6 +55,7 @@ _args=" --num-batches="${nbatches}\
 " --numpy-rand-seed="${rand_seed}\
 " --print-freq="${print_freq}\
 " --print-time"\
+" --save-onnx"\
 " --enable-profiling "
 
 c2_args=" --caffe2-net-type="${c2_net}

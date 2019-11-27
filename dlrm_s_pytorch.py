@@ -82,6 +82,17 @@ from torch.nn.parallel.scatter_gather import gather, scatter
 
 exc = getattr(builtins, "IOError", "FileNotFoundError")
 
+class DLRMInputContainer(nn.Module):
+    """Wrapper Container that allows me to capture the input tensor values and load in C++."""
+
+    def __init__(self, my_values):
+        super().__init__()
+        for key in my_values:
+            setattr(self, key, my_values[key])
+
+    def forward(x):
+        pass
+
 
 ### define dlrm in PyTorch ###
 class DLRM_Net(nn.Module):
@@ -181,9 +192,15 @@ class DLRM_Net(nn.Module):
             self.sync_dense_params = sync_dense_params
             self.loss_threshold = loss_threshold
             # create operators
-            self.emb_l = self.create_emb(m_spa, ln_emb)
-            self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
-            self.top_l = self.create_mlp(ln_top, sigmoid_top)
+
+            if False:
+                self.emb_l = self.create_emb(m_spa, ln_emb)
+
+            if True:
+                self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
+
+            if False:
+                self.top_l = self.create_mlp(ln_top, sigmoid_top)
 
     def apply_mlp(self, x, layers):
         # approach 1: use ModuleList
@@ -251,38 +268,48 @@ class DLRM_Net(nn.Module):
 
         return R
 
-    def forward(self, dense_x, lS_o, lS_i):
+    # def forward(self, dense_x, lS_o, lS_i):
+    def forward(self, dense_x): # bot_l input
+        # __import__('pdb').set_trace()
         if self.ndevices <= 1:
-            return self.sequential_forward(dense_x, lS_o, lS_i)
+            # return self.sequential_forward(dense_x, lS_o, lS_i)
+            return self.sequential_forward(dense_x) # bot_l input
         else:
             return self.parallel_forward(dense_x, lS_o, lS_i)
 
-    def sequential_forward(self, dense_x, lS_o, lS_i):
+    # def sequential_forward(self, dense_x, lS_o, lS_i):
+    def sequential_forward(self, dense_x): # bot_l input
+        # __import__('pdb').set_trace()
         # process dense features (using bottom mlp), resulting in a row vector
         x = self.apply_mlp(dense_x, self.bot_l)
-        # debug prints
-        # print("intermediate")
-        # print(x.detach().cpu().numpy())
+        # self.x = x
+        # # debug prints
+        # # print("intermediate")
+        # # print(x.detach().cpu().numpy())
 
         # process sparse features(using embeddings), resulting in a list of row vectors
-        ly = self.apply_emb(lS_o, lS_i, self.emb_l)
-        # for y in ly:
-        #     print(y.detach().cpu().numpy())
+        # ly = self.apply_emb(lS_o, lS_i, self.emb_l)
+        # __import__('pdb').set_trace()
+        # self.ly = ly
+        # # for y in ly:
+        # #     print(y.detach().cpu().numpy())
 
-        # interact features (dense and sparse)
-        z = self.interact_features(x, ly)
-        # print(z.detach().cpu().numpy())
+        # # interact features (dense and sparse)
+        # z = self.interact_features(x, ly)
+        # # print(z.detach().cpu().numpy())
 
-        # obtain probability of a click (using top mlp)
-        p = self.apply_mlp(z, self.top_l)
+        # # obtain probability of a click (using top mlp)
+        # p = self.apply_mlp(z, self.top_l)
 
-        # clamp output if needed
-        if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
-            z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
-        else:
-            z = p
+        # # clamp output if needed
+        # if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
+        #     z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
+        # else:
+        #     z = p
 
-        return z
+        # return z
+        return x
+        # return torch.stack(ly)
 
     def parallel_forward(self, dense_x, lS_o, lS_i):
         ### prepare model (overwrite) ###
@@ -760,6 +787,24 @@ if __name__ == "__main__":
     if not (args.load_model == ""):
         print("Loading saved mode {}".format(args.load_model))
         ld_model = torch.load(args.load_model)
+
+        # Bryce, hacks for deleting state_dict keys to dump intermediate results
+        if True:
+            def delete_state_keys(k_pfx, d):
+                keys_to_delete = []
+                for k in d.keys():
+                    if k_pfx in k:
+                        keys_to_delete.append(k)
+
+                print("keys_to_delete: {}", keys_to_delete)
+                for k in keys_to_delete:
+                    del d[k]
+
+            # delete_state_keys("bot_l", ld_model["state_dict"])
+            delete_state_keys("emb", ld_model["state_dict"])
+            delete_state_keys("top_l", ld_model["state_dict"])
+
+        # __import__('pdb').set_trace()
         dlrm.load_state_dict(ld_model["state_dict"])
         ld_j = ld_model["iter"]
         ld_k = ld_model["epoch"]
@@ -811,6 +856,16 @@ if __name__ == "__main__":
                 t1 = time_wrap(use_gpu)
 
                 # forward pass
+                my_values = {
+                    "X": X,
+                    "lS_o": lS_o,
+                    "lS_i": lS_i,
+                }
+                input_container = DLRMInputContainer(my_values)
+                # dlrm_script = torch.jit.trace(dlrm, (X, lS_o, lS_i)) # total network
+                dlrm_script = torch.jit.trace(dlrm, X) # bot_l
+
+                __import__('pdb').set_trace()
                 Z = dlrm_wrap(X, lS_o, lS_i, use_gpu, device)
 
                 # loss
@@ -854,6 +909,7 @@ if __name__ == "__main__":
                     and (args.data_generation == "dataset")
                     and (((j + 1) % args.test_freq == 0) or (j + 1 == nbatches))
                 )
+                # __import__('pdb').set_trace()
 
                 # print time, loss and accuracy
                 if print_tl or print_ts:
