@@ -214,7 +214,7 @@ class DLRM_Net(nn.Module):
             if False:
                 self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
 
-            if False:
+            if True:
                 self.top_l = self.create_mlp(ln_top, sigmoid_top)
 
     def apply_mlp(self, x, layers):
@@ -288,20 +288,23 @@ class DLRM_Net(nn.Module):
     # def forward(self, dense_x, lS_o, lS_i):
     # def forward(self, dense_x): # bot_l input
     # def forward(self, lS_o, lS_i): # emb input
-    def forward(self, bot_l_out, emb_out): # feature_interaction
+    # def forward(self, bot_l_out, emb_out): # feature_interaction
+    def forward(self, interact_features_out): # top_l
         # __import__('pdb').set_trace()
         if self.ndevices <= 1:
             # return self.sequential_forward(dense_x, lS_o, lS_i)
             # return self.sequential_forward(dense_x) # bot_l input
             # return self.sequential_forward(lS_o, lS_i) # emb input
-            return self.sequential_forward(bot_l_out, emb_out) # feature_interaction
+            # return self.sequential_forward(bot_l_out, emb_out) # feature_interaction
+            return self.sequential_forward(interact_features_out) # top_l input
         else:
             return self.parallel_forward(dense_x, lS_o, lS_i)
 
     # def sequential_forward(self, dense_x, lS_o, lS_i):
     # def sequential_forward(self, dense_x): # bot_l input
     # def sequential_forward(self, lS_o, lS_i): # bot_l input
-    def sequential_forward(self, bot_l_out, emb_out): # bot_l input
+    # def sequential_forward(self, bot_l_out, emb_out): # interact_features_input
+    def sequential_forward(self, interact_features_out): # top_l input
         # __import__('pdb').set_trace()
         # process dense features (using bottom mlp), resulting in a row vector
         # x = self.apply_mlp(dense_x, self.bot_l)
@@ -319,18 +322,18 @@ class DLRM_Net(nn.Module):
 
         # # interact features (dense and sparse)
         # z = self.interact_features(x, ly)
-        z = self.interact_features(bot_l_out, emb_out)
+        # z = self.interact_features(bot_l_out, emb_out)
         # # print(z.detach().cpu().numpy())
 
         # # obtain probability of a click (using top mlp)
         # p = self.apply_mlp(z, self.top_l)
+        p = self.apply_mlp(interact_features_out, self.top_l)
 
-        # # clamp output if needed
-        # if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
-        #     z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
-        # else:
-        #     z = p
-
+        # clamp output if needed
+        if 0.0 < self.loss_threshold and self.loss_threshold < 1.0:
+            z = torch.clamp(p, min=self.loss_threshold, max=(1.0 - self.loss_threshold))
+        else:
+            z = p
         return z
         # return x
         # return torch.stack(ly)
@@ -784,7 +787,7 @@ if __name__ == "__main__":
 
             delete_state_keys("bot_l", ld_model["state_dict"])
             delete_state_keys("emb", ld_model["state_dict"])
-            delete_state_keys("top_l", ld_model["state_dict"])
+            # delete_state_keys("top_l", ld_model["state_dict"])
 
         # __import__('pdb').set_trace()
         dlrm.load_state_dict(ld_model["state_dict"])
@@ -848,11 +851,13 @@ if __name__ == "__main__":
                 # dlrm_script = torch.jit.trace(dlrm, (X, lS_o, lS_i)) # total network
                 bot_l_out = torch.load("bot_l_output.pt")
                 emb_out = torch.load("emb_output.pt")
-                # __import__('pdb').set_trace()
+                interact_features_out = torch.load("interact_features_out.pt")
+                __import__('pdb').set_trace()
                 # V = dlrm(bot_l_out, emb_out)
                 # dlrm_script = torch.jit.trace(dlrm, X) # bot_l
                 # dlrm_script = torch.jit.trace(dlrm, (lS_o, lS_i)) # emb
-                dlrm_script = torch.jit.trace(dlrm, (bot_l_out, emb_out)) # feature-interaction
+                # dlrm_script = torch.jit.trace(dlrm, (bot_l_out, emb_out)) # feature-interaction
+                dlrm_script = torch.jit.trace(dlrm, interact_features_out) # top_l
 
                 __import__('pdb').set_trace()
                 Z = dlrm_wrap(X, lS_o, lS_i, use_gpu, device)
