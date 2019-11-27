@@ -208,10 +208,10 @@ class DLRM_Net(nn.Module):
                 self.qr_operation = qr_operation
                 self.qr_threshold = qr_threshold
             # create operators
-            if False:
+            if True:
                 self.emb_l = self.create_emb(m_spa, ln_emb)
 
-            if True:
+            if False:
                 self.bot_l = self.create_mlp(ln_bot, sigmoid_bot)
 
             if False:
@@ -284,26 +284,29 @@ class DLRM_Net(nn.Module):
         return R
 
     # def forward(self, dense_x, lS_o, lS_i):
-    def forward(self, dense_x): # bot_l input
+    # def forward(self, dense_x): # bot_l input
+    def forward(self, lS_o, lS_i): # emb input
         # __import__('pdb').set_trace()
         if self.ndevices <= 1:
             # return self.sequential_forward(dense_x, lS_o, lS_i)
-            return self.sequential_forward(dense_x) # bot_l input
+            # return self.sequential_forward(dense_x) # bot_l input
+            return self.sequential_forward(lS_o, lS_i) # emb input
         else:
             return self.parallel_forward(dense_x, lS_o, lS_i)
 
     # def sequential_forward(self, dense_x, lS_o, lS_i):
-    def sequential_forward(self, dense_x): # bot_l input
+    # def sequential_forward(self, dense_x): # bot_l input
+    def sequential_forward(self, lS_o, lS_i): # bot_l input
         # __import__('pdb').set_trace()
         # process dense features (using bottom mlp), resulting in a row vector
-        x = self.apply_mlp(dense_x, self.bot_l)
+        # x = self.apply_mlp(dense_x, self.bot_l)
         # self.x = x
         # # debug prints
         # # print("intermediate")
         # # print(x.detach().cpu().numpy())
 
         # process sparse features(using embeddings), resulting in a list of row vectors
-        # ly = self.apply_emb(lS_o, lS_i, self.emb_l)
+        ly = self.apply_emb(lS_o, lS_i, self.emb_l)
         # __import__('pdb').set_trace()
         # self.ly = ly
         # # for y in ly:
@@ -323,8 +326,8 @@ class DLRM_Net(nn.Module):
         #     z = p
 
         # return z
-        return x
-        # return torch.stack(ly)
+        # return x
+        return torch.stack(ly)
 
     def parallel_forward(self, dense_x, lS_o, lS_i):
         ### prepare model (overwrite) ###
@@ -773,8 +776,8 @@ if __name__ == "__main__":
                 for k in keys_to_delete:
                     del d[k]
 
-            # delete_state_keys("bot_l", ld_model["state_dict"])
-            delete_state_keys("emb", ld_model["state_dict"])
+            delete_state_keys("bot_l", ld_model["state_dict"])
+            # delete_state_keys("emb", ld_model["state_dict"])
             delete_state_keys("top_l", ld_model["state_dict"])
 
         # __import__('pdb').set_trace()
@@ -837,7 +840,8 @@ if __name__ == "__main__":
                 }
                 input_container = DLRMInputContainer(my_values)
                 # dlrm_script = torch.jit.trace(dlrm, (X, lS_o, lS_i)) # total network
-                dlrm_script = torch.jit.trace(dlrm, X) # bot_l
+                # dlrm_script = torch.jit.trace(dlrm, X) # bot_l
+                dlrm_script = torch.jit.trace(dlrm, (lS_o, lS_i)) # emb
 
                 __import__('pdb').set_trace()
                 Z = dlrm_wrap(X, lS_o, lS_i, use_gpu, device)
